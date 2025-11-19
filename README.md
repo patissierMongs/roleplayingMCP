@@ -6,9 +6,11 @@ A Model Context Protocol (MCP) server that provides dice rolling functionality, 
 
 - **Roll d20 dice**: The server provides a single dice type (d20)
 - **Default behavior**: Rolls 1d20 by default
-- **Configurable count**: Change the number of dice to roll
+- **Configurable count**: Change the number of positive dice to roll
 - **Negative dice support**: Can accept negative dice counts for subtraction
-- **Sum calculation**: Returns the total sum of all rolls
+  - Negative dice cannot be used alone
+  - Positive dice count must be greater than negative dice count
+- **Sum calculation**: Returns the total sum (positive rolls - negative rolls)
 
 ## Installation
 
@@ -50,7 +52,12 @@ The server exposes a single tool called `roll_dice`:
 **Tool Name**: `roll_dice`
 
 **Parameters**:
-- `count` (integer, optional): Number of d20 dice to roll. Default is 1. Can be negative.
+- `count` (integer, optional): Number of positive d20 dice to roll. Default is 1. Minimum is 1. Must be greater than `negative_count`.
+- `negative_count` (integer, optional): Number of negative d20 dice to roll. Default is 0. Minimum is 0. Must be less than `count`. Cannot be used alone.
+
+**Rules**:
+- Negative dice cannot be used alone (count must be at least 1)
+- Positive dice count must be greater than negative dice count
 
 **Examples**:
 
@@ -62,7 +69,7 @@ The server exposes a single tool called `roll_dice`:
    ```
    Output: `Rolled 1d20: 15\nSum: 15`
 
-2. **Roll multiple dice (3d20)**:
+2. **Roll multiple positive dice (3d20)**:
    ```json
    {
      "name": "roll_dice",
@@ -73,27 +80,63 @@ The server exposes a single tool called `roll_dice`:
    ```
    Output: `Rolled 3d20: [12, 7, 19]\nSum: 38`
 
-3. **Roll negative dice (-2d20)**:
+3. **Roll with negative dice (3d20 - 1d20)**:
    ```json
    {
      "name": "roll_dice",
      "arguments": {
-       "count": -2
+       "count": 3,
+       "negative_count": 1
      }
    }
    ```
-   Output: `Rolled 2d20: [8, 14]\nSum: -22 = -22`
+   Output:
+   ```
+   Rolled 3d20: [15, 8, 12]
+   Rolled -1d20: [6]
+   Sum: 35 - 6 = 29
+   ```
 
-4. **Roll zero dice**:
+4. **Roll with multiple negative dice (5d20 - 2d20)**:
    ```json
    {
      "name": "roll_dice",
      "arguments": {
-       "count": 0
+       "count": 5,
+       "negative_count": 2
      }
    }
    ```
-   Output: `No dice rolled (count = 0)\nSum: 0`
+   Output:
+   ```
+   Rolled 5d20: [18, 3, 11, 7, 14]
+   Rolled -2d20: [9, 12]
+   Sum: 53 - 21 = 32
+   ```
+
+5. **Invalid: negative dice alone (ERROR)**:
+   ```json
+   {
+     "name": "roll_dice",
+     "arguments": {
+       "count": 0,
+       "negative_count": 2
+     }
+   }
+   ```
+   Output: `Error: Positive dice count must be at least 1`
+
+6. **Invalid: negative_count >= count (ERROR)**:
+   ```json
+   {
+     "name": "roll_dice",
+     "arguments": {
+       "count": 2,
+       "negative_count": 2
+     }
+   }
+   ```
+   Output: `Error: Positive dice count (2) must be greater than negative dice count (2)`
 
 ## Configuration with MCP Clients
 
