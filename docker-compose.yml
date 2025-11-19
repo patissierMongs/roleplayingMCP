@@ -1,0 +1,10 @@
+version: '3.8'
+
+services:
+  dice-server:
+    build: .
+    image: dice-mcp-server:latest
+    container_name: dice-mcp-server
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
