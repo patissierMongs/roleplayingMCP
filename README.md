@@ -1,146 +1,115 @@
 # Dice MCP Server
 
-A Model Context Protocol (MCP) server that provides dice rolling functionality, containerized with Docker.
+A Model Context Protocol (MCP) server that provides TRPG dice rolling functionality, containerized with Docker.
 
 ## Features
 
-- **Roll d20 dice**: The server provides a single dice type (d20)
-- **Default behavior**: Rolls 1d20 by default
-- **Configurable count**: Change the number of positive dice to roll
-- **Negative dice support**: Can accept negative dice counts for subtraction
-  - Negative dice cannot be used alone
-  - Positive dice count must be greater than negative dice count
-- **Sum calculation**: Returns the total sum (positive rolls - negative rolls)
+- **Standard dice notation**: Any dice expression — `1d20`, `2d6+3`, `4d6`, `1d100`, `3d20-2d20+2`
+- **Advantage / Disadvantage**: D&D 5e style — roll 1d20 twice, take higher or lower
+- **Dice pool / Success counting**: World of Darkness, Shadowrun style — roll N dice, count successes
+  - Exploding dice (max value triggers reroll)
+  - Double successes on high rolls
+- **Target (DC/AC) check**: Automatic success/failure判定
+- **Roll history**: Track and review recent rolls per session
+- **MCP-compliant error handling**: Errors returned as `TextContent`, never crashes
 
 ## Installation
 
 ### Prerequisites
 
 - Docker
-- Docker Compose (optional, for easier deployment)
+- Docker Compose (optional)
 
-### Building the Docker Image
+### Building
 
 ```bash
 docker build -t dice-mcp-server .
 ```
 
-Or using Docker Compose:
+Or:
 
 ```bash
-docker-compose build
+docker compose build
 ```
 
-## Usage
+## Tools
 
-### Running with Docker
+### `roll_dice`
 
-```bash
-docker run -i dice-mcp-server
+Roll dice using standard TRPG notation.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `notation` | string | Yes | Dice expression: `1d20+5`, `2d6+3`, `3d20-2d20` |
+| `advantage` | string | No | `"normal"`, `"advantage"`, `"disadvantage"` (1d20 only) |
+| `target` | integer | No | DC/AC — adds success/failure check |
+
+**Examples:**
+
+```jsonc
+// Basic d20 + modifier
+{ "name": "roll_dice", "arguments": { "notation": "1d20+5" } }
+// → 1d20: [14]
+// → Modifier: +5
+// → Total: 19
+
+// Advantage with DC check
+{ "name": "roll_dice", "arguments": { "notation": "1d20+5", "advantage": "advantage", "target": 15 } }
+// → Roll (Advantage): 1d20 → [14, 8] → 선택: 14
+// → Modifier: +5
+// → Total: 19
+// → 판정: 성공! (19 ≥ 15)
+
+// Fireball damage
+{ "name": "roll_dice", "arguments": { "notation": "8d6" } }
+// → 8d6: [3, 5, 2, 6, 1, 4, 6, 3]
+// → Total: 30
+
+// Negative dice (3d20 minus 2d20)
+{ "name": "roll_dice", "arguments": { "notation": "3d20-2d20+2" } }
+// → 3d20: [15, 8, 12]
+// → -2d20: [6, 11]
+// → Modifier: +2
+// → Total: 35 - 17 +2 = 20
 ```
 
-### Running with Docker Compose
+### `roll_pool`
 
-```bash
-docker-compose up
+Dice pool with success counting.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `pool` | integer | Yes | Number of dice (1-50) |
+| `sides` | integer | No | Sides per die (default: 10) |
+| `target` | integer | No | Success threshold (default: 8) |
+| `explode` | boolean | No | Reroll on max value (default: false) |
+| `double_on` | integer | No | Double success at this value or higher |
+
+**Example:**
+
+```jsonc
+// World of Darkness: 6d10, target 8, 10s explode
+{ "name": "roll_pool", "arguments": { "pool": 6, "target": 8, "explode": true } }
+// → Dice Pool: 6d10 (target ≥ 8, exploding)
+// → Rolls: [(10→3), 8, 4, 2, 9, 7]
+// → Successes: 3
 ```
 
-### MCP Tool Usage
+### `get_history`
 
-The server exposes a single tool called `roll_dice`:
+Retrieve recent roll history.
 
-**Tool Name**: `roll_dice`
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `limit` | integer | No | Number of records (default: 10) |
 
-**Parameters**:
-- `count` (integer, optional): Number of positive d20 dice to roll. Default is 1. Minimum is 1. Must be greater than `negative_count`.
-- `negative_count` (integer, optional): Number of negative d20 dice to roll. Default is 0. Minimum is 0. Must be less than `count`. Cannot be used alone.
+### `clear_history`
 
-**Rules**:
-- Negative dice cannot be used alone (count must be at least 1)
-- Positive dice count must be greater than negative dice count
+Clear all roll history. No parameters.
 
-**Examples**:
+## MCP Client Configuration
 
-1. **Default roll (1d20)**:
-   ```json
-   {
-     "name": "roll_dice"
-   }
-   ```
-   Output: `Rolled 1d20: 15\nSum: 15`
-
-2. **Roll multiple positive dice (3d20)**:
-   ```json
-   {
-     "name": "roll_dice",
-     "arguments": {
-       "count": 3
-     }
-   }
-   ```
-   Output: `Rolled 3d20: [12, 7, 19]\nSum: 38`
-
-3. **Roll with negative dice (3d20 - 1d20)**:
-   ```json
-   {
-     "name": "roll_dice",
-     "arguments": {
-       "count": 3,
-       "negative_count": 1
-     }
-   }
-   ```
-   Output:
-   ```
-   Rolled 3d20: [15, 8, 12]
-   Rolled -1d20: [6]
-   Sum: 35 - 6 = 29
-   ```
-
-4. **Roll with multiple negative dice (5d20 - 2d20)**:
-   ```json
-   {
-     "name": "roll_dice",
-     "arguments": {
-       "count": 5,
-       "negative_count": 2
-     }
-   }
-   ```
-   Output:
-   ```
-   Rolled 5d20: [18, 3, 11, 7, 14]
-   Rolled -2d20: [9, 12]
-   Sum: 53 - 21 = 32
-   ```
-
-5. **Invalid: negative dice alone (ERROR)**:
-   ```json
-   {
-     "name": "roll_dice",
-     "arguments": {
-       "count": 0,
-       "negative_count": 2
-     }
-   }
-   ```
-   Output: `Error: Positive dice count must be at least 1`
-
-6. **Invalid: negative_count >= count (ERROR)**:
-   ```json
-   {
-     "name": "roll_dice",
-     "arguments": {
-       "count": 2,
-       "negative_count": 2
-     }
-   }
-   ```
-   Output: `Error: Positive dice count (2) must be greater than negative dice count (2)`
-
-## Configuration with MCP Clients
-
-To use this server with an MCP client (like Claude Desktop), add the following to your MCP settings:
+### Claude Desktop
 
 ```json
 {
@@ -153,35 +122,26 @@ To use this server with an MCP client (like Claude Desktop), add the following t
 }
 ```
 
-## Development
-
-### Project Structure
+## Project Structure
 
 ```
 .
-├── server.py           # Main MCP server implementation
+├── server.py           # MCP server — tool registration & handlers
+├── dice_parser.py      # Dice notation parser (NdM+K)
+├── history.py          # Roll history manager
 ├── requirements.txt    # Python dependencies
-├── Dockerfile         # Docker container definition
-├── docker-compose.yml # Docker Compose configuration
-└── README.md          # This file
+├── Dockerfile          # Container definition
+├── docker-compose.yml  # Compose configuration
+└── README.md
 ```
 
-### Local Development (without Docker)
+## Local Development
 
-1. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-2. Run the server:
-   ```bash
-   python server.py
-   ```
+```bash
+pip install -r requirements.txt
+python server.py
+```
 
 ## License
 
 MIT
-
-## Author
-
-Created for roleplaying and game mechanics support.
