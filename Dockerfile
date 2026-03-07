@@ -10,7 +10,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy server code
-COPY server.py .
+COPY server.py dice_parser.py history.py ./
 
 # Make server executable
 RUN chmod +x server.py
