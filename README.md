@@ -1,6 +1,6 @@
 # Dice MCP Server
 
-A Model Context Protocol (MCP) server that provides dice rolling functionality, containerized with Docker.
+A Model Context Protocol (MCP) server that provides dice rolling functionality for roleplaying and game mechanics.
 
 ## Features
 
@@ -12,40 +12,64 @@ A Model Context Protocol (MCP) server that provides dice rolling functionality, 
   - Positive dice count must be greater than negative dice count
 - **Sum calculation**: Returns the total sum (positive rolls - negative rolls)
 
-## Installation
+## Quick Start (uvx)
 
-### Prerequisites
+No installation needed. Just configure Claude Desktop:
 
-- Docker
-- Docker Compose (optional, for easier deployment)
+**`claude_desktop_config.json`**:
+```json
+{
+  "mcpServers": {
+    "dice": {
+      "command": "uvx",
+      "args": ["roleplaying-dice-mcp"]
+    }
+  }
+}
+```
 
-### Building the Docker Image
+That's it! Claude Desktop will automatically download and run the server.
+
+> Config file location:
+> - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+> - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+
+## Alternative: Install with pip
+
+```bash
+pip install roleplaying-dice-mcp
+```
+
+Then configure Claude Desktop:
+```json
+{
+  "mcpServers": {
+    "dice": {
+      "command": "roleplaying-dice-mcp"
+    }
+  }
+}
+```
+
+## Alternative: Docker
 
 ```bash
 docker build -t dice-mcp-server .
-```
-
-Or using Docker Compose:
-
-```bash
-docker-compose build
-```
-
-## Usage
-
-### Running with Docker
-
-```bash
 docker run -i dice-mcp-server
 ```
 
-### Running with Docker Compose
-
-```bash
-docker-compose up
+```json
+{
+  "mcpServers": {
+    "dice": {
+      "command": "docker",
+      "args": ["run", "-i", "dice-mcp-server"]
+    }
+  }
+}
 ```
 
-### MCP Tool Usage
+## MCP Tool Usage
 
 The server exposes a single tool called `roll_dice`:
 
@@ -138,45 +162,31 @@ The server exposes a single tool called `roll_dice`:
    ```
    Output: `Error: Positive dice count (2) must be greater than negative dice count (2)`
 
-## Configuration with MCP Clients
-
-To use this server with an MCP client (like Claude Desktop), add the following to your MCP settings:
-
-```json
-{
-  "mcpServers": {
-    "dice": {
-      "command": "docker",
-      "args": ["run", "-i", "dice-mcp-server"]
-    }
-  }
-}
-```
-
 ## Development
 
 ### Project Structure
 
 ```
 .
-├── server.py           # Main MCP server implementation
-├── requirements.txt    # Python dependencies
-├── Dockerfile         # Docker container definition
-├── docker-compose.yml # Docker Compose configuration
-└── README.md          # This file
+├── src/
+│   └── roleplaying_dice_mcp/
+│       ├── __init__.py     # Package entry point
+│       └── server.py       # MCP server implementation
+├── pyproject.toml          # Package configuration
+├── Dockerfile              # Docker container definition
+├── docker-compose.yml      # Docker Compose configuration
+└── README.md               # This file
 ```
 
-### Local Development (without Docker)
+### Local Development
 
-1. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+```bash
+# Install in editable mode
+pip install -e .
 
-2. Run the server:
-   ```bash
-   python server.py
-   ```
+# Run the server
+roleplaying-dice-mcp
+```
 
 ## License
 
