@@ -1,6 +1,6 @@
 """Roll history manager for the TRPG dice server."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 

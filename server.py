@@ -18,7 +18,7 @@ from mcp.server import NotificationOptions, Server
 import mcp.server.stdio
 import mcp.types as types
 
-from dice_parser import parse, ParsedNotation, DiceGroup
+from dice_parser import parse, DiceGroup
 from history import RollHistory
 
 server = Server("dice-server")
@@ -149,9 +149,20 @@ async def handle_list_tools() -> list[types.Tool]:
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_error(message: str) -> list[types.TextContent]:
-    """Return an MCP-compliant error response as TextContent with isError flag."""
-    return [types.TextContent(type="text", text=f"Error: {message}")]
+def _error_result(message: str) -> types.CallToolResult:
+    """Return an MCP-compliant error CallToolResult with isError=True."""
+    return types.CallToolResult(
+        content=[types.TextContent(type="text", text=f"Error: {message}")],
+        isError=True,
+    )
+
+
+def _ok_result(text: str) -> types.CallToolResult:
+    """Return a successful CallToolResult."""
+    return types.CallToolResult(
+        content=[types.TextContent(type="text", text=text)],
+        isError=False,
+    )
 
 
 def _roll_group(group: DiceGroup) -> list[int]:
@@ -167,12 +178,12 @@ def _execute_roll_dice(
     notation: str,
     advantage: str = "normal",
     target: int | None = None,
-) -> tuple[str, bool]:
-    """Execute a dice roll. Returns (result_text, is_error)."""
+) -> types.CallToolResult:
+    """Execute a dice roll and return a CallToolResult."""
     try:
         parsed = parse(notation)
     except ValueError as e:
-        return str(e), True
+        return _error_result(str(e))
 
     # Advantage/disadvantage: only valid for single d20 group
     adv_applicable = (
@@ -184,15 +195,14 @@ def _execute_roll_dice(
     )
 
     if advantage != "normal" and not adv_applicable:
-        return (
+        return _error_result(
             "어드밴티지/디스어드밴티지는 단일 1d20 굴림에만 적용 가능합니다. "
             f"현재 표현식: '{notation}'"
-        ), True
+        )
 
     lines: list[str] = []
 
     if adv_applicable:
-        # Roll twice
         roll1 = random.randint(1, 20)
         roll2 = random.randint(1, 20)
         if advantage == "advantage":
@@ -209,13 +219,11 @@ def _execute_roll_dice(
             lines.append(f"Modifier: {sign}{parsed.modifier}")
         lines.append(f"Total: {total}")
     else:
-        # Standard roll
         all_results: list[tuple[DiceGroup, list[int]]] = []
         for group in parsed.groups:
             rolls = _roll_group(group)
             all_results.append((group, rolls))
 
-        # Build output
         positive_sum = 0
         negative_sum = 0
 
@@ -231,19 +239,17 @@ def _execute_roll_dice(
         dice_total = positive_sum - negative_sum
         total = dice_total + parsed.modifier
 
-        if parsed.modifier != 0:
-            sign = "+" if parsed.modifier > 0 else ""
-            lines.append(f"Modifier: {sign}{parsed.modifier}")
-
+        # Build the Total line
         if negative_sum > 0:
-            lines.append(f"Total: {positive_sum} - {negative_sum} {'+' if parsed.modifier >= 0 else ''}{parsed.modifier if parsed.modifier != 0 else ''} = {total}".rstrip(" ="))
-            # Clean up the total line
-            lines[-1] = f"Total: {positive_sum} - {negative_sum}"
+            total_parts = [f"{positive_sum} - {negative_sum}"]
             if parsed.modifier != 0:
                 sign = "+" if parsed.modifier > 0 else ""
-                lines[-1] += f" {sign}{parsed.modifier}"
-            lines[-1] += f" = {total}"
+                total_parts.append(f"{sign}{parsed.modifier}")
+            lines.append(f"Total: {' '.join(total_parts)} = {total}")
         else:
+            if parsed.modifier != 0:
+                sign = "+" if parsed.modifier > 0 else ""
+                lines.append(f"Modifier: {sign}{parsed.modifier}")
             lines.append(f"Total: {total}")
 
     # Target check
@@ -253,7 +259,13 @@ def _execute_roll_dice(
         else:
             lines.append(f"판정: 실패 ({total} < {target})")
 
-    return "\n".join(lines), False
+    result_text = "\n".join(lines)
+    history.add(
+        "roll_dice",
+        notation + (f" ({advantage})" if advantage != "normal" else ""),
+        result_text,
+    )
+    return _ok_result(result_text)
 
 
 # ---------------------------------------------------------------------------
@@ -266,29 +278,27 @@ def _execute_roll_pool(
     target: int = 8,
     explode: bool = False,
     double_on: int | None = None,
-) -> tuple[str, bool]:
-    """Execute a dice pool roll. Returns (result_text, is_error)."""
+) -> types.CallToolResult:
+    """Execute a dice pool roll and return a CallToolResult."""
     if pool < 1 or pool > 50:
-        return "다이스 풀 크기는 1~50 사이여야 합니다.", True
+        return _error_result("다이스 풀 크기는 1~50 사이여야 합니다.")
     if sides < 2:
-        return "주사위 면 수는 2 이상이어야 합니다.", True
+        return _error_result("주사위 면 수는 2 이상이어야 합니다.")
     if target < 1 or target > sides:
-        return f"성공 기준값은 1~{sides} 사이여야 합니다.", True
+        return _error_result(f"성공 기준값은 1~{sides} 사이여야 합니다.")
     if double_on is not None and double_on < target:
-        return f"double_on({double_on})은 target({target}) 이상이어야 합니다.", True
+        return _error_result(f"double_on({double_on})은 target({target}) 이상이어야 합니다.")
 
-    rolls: list[str] = []  # display strings
+    rolls_display: list[str] = []
     successes = 0
 
     for _ in range(pool):
         roll = random.randint(1, sides)
         chain = [roll]
 
-        # Exploding dice
         while explode and chain[-1] == sides:
             chain.append(random.randint(1, sides))
 
-        # Count successes from chain
         die_successes = 0
         for val in chain:
             if val >= target:
@@ -299,22 +309,27 @@ def _execute_roll_pool(
 
         successes += die_successes
 
-        # Format display
         if len(chain) > 1:
             chain_str = "→".join(str(v) for v in chain)
-            rolls.append(f"({chain_str})")
+            rolls_display.append(f"({chain_str})")
         else:
-            rolls.append(str(roll))
+            rolls_display.append(str(roll))
 
     lines: list[str] = []
-    lines.append(f"Dice Pool: {pool}d{sides} (target ≥ {target}"
-                 + (", exploding" if explode else "")
-                 + (f", double on ≥ {double_on}" if double_on else "")
-                 + ")")
-    lines.append(f"Rolls: [{', '.join(rolls)}]")
+    header = f"Dice Pool: {pool}d{sides} (target ≥ {target}"
+    if explode:
+        header += ", exploding"
+    if double_on is not None:
+        header += f", double on ≥ {double_on}"
+    header += ")"
+    lines.append(header)
+    lines.append(f"Rolls: [{', '.join(rolls_display)}]")
     lines.append(f"Successes: {successes}")
 
-    return "\n".join(lines), False
+    result_text = "\n".join(lines)
+    desc = f"{pool}d{sides} pool (target≥{target})"
+    history.add("roll_pool", desc, result_text)
+    return _ok_result(result_text)
 
 
 # ---------------------------------------------------------------------------
@@ -324,31 +339,26 @@ def _execute_roll_pool(
 @server.call_tool()
 async def handle_call_tool(
     name: str, arguments: dict[str, Any] | None
-) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
+) -> types.CallToolResult:
     args = arguments or {}
 
     if name == "roll_dice":
         notation = args.get("notation")
         if not notation:
-            return _make_error("'notation' 파라미터가 필요합니다. 예: '1d20+5'")
+            return _error_result("'notation' 파라미터가 필요합니다. 예: '1d20+5'")
         advantage = args.get("advantage", "normal")
         if advantage not in ("normal", "advantage", "disadvantage"):
-            return _make_error("'advantage'는 'normal', 'advantage', 'disadvantage' 중 하나여야 합니다.")
+            return _error_result(
+                "'advantage'는 'normal', 'advantage', 'disadvantage' 중 하나여야 합니다."
+            )
         target = args.get("target")
-
-        text, is_error = _execute_roll_dice(notation, advantage, target)
-
-        if not is_error:
-            history.add("roll_dice", f"{notation}" + (f" ({advantage})" if advantage != "normal" else ""), text)
-
-        return [types.TextContent(type="text", text=text)]
+        return _execute_roll_dice(notation, advantage, target)
 
     elif name == "roll_pool":
         pool = args.get("pool")
         if pool is None:
-            return _make_error("'pool' 파라미터가 필요합니다.")
-
-        text, is_error = _execute_roll_pool(
+            return _error_result("'pool' 파라미터가 필요합니다.")
+        return _execute_roll_pool(
             pool=int(pool),
             sides=int(args.get("sides", 10)),
             target=int(args.get("target", 8)),
@@ -356,30 +366,24 @@ async def handle_call_tool(
             double_on=int(args["double_on"]) if args.get("double_on") is not None else None,
         )
 
-        if not is_error:
-            desc = f"{pool}d{args.get('sides', 10)} pool (target≥{args.get('target', 8)})"
-            history.add("roll_pool", desc, text)
-
-        return [types.TextContent(type="text", text=text)]
-
     elif name == "get_history":
         limit = int(args.get("limit", 10))
         records = history.get(limit)
         if not records:
-            return [types.TextContent(type="text", text="굴림 기록이 없습니다.")]
+            return _ok_result("굴림 기록이 없습니다.")
 
         lines = [f"=== 최근 {len(records)}개 굴림 기록 ==="]
         for i, rec in enumerate(records, 1):
             lines.append(f"[{i}] ({rec.timestamp}) {rec.tool}: {rec.input_desc}")
-            lines.append(f"    → {rec.result_text.split(chr(10))[-1]}")  # last line (Total/Successes)
-        return [types.TextContent(type="text", text="\n".join(lines))]
+            lines.append(f"    → {rec.result_text.split(chr(10))[-1]}")
+        return _ok_result("\n".join(lines))
 
     elif name == "clear_history":
         count = history.clear()
-        return [types.TextContent(type="text", text=f"굴림 기록 {count}건을 삭제했습니다.")]
+        return _ok_result(f"굴림 기록 {count}건을 삭제했습니다.")
 
     else:
-        return _make_error(f"알 수 없는 tool입니다: '{name}'")
+        return _error_result(f"알 수 없는 tool입니다: '{name}'")
 
 
 # ---------------------------------------------------------------------------
