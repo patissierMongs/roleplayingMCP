@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "roleplaying-dice-mcp"
-version = "1.0.0"
-description = "MCP server for rolling d20 dice with positive and negative dice support"
+version = "3.0.0"
+description = "MCP server for TRPG dice rolling — standard notation, dice pools, advantage, critical detection, and more"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
