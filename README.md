@@ -13,23 +13,61 @@ A Model Context Protocol (MCP) server that provides TRPG dice rolling functional
 - **Roll history**: Track and review recent rolls per session
 - **MCP-compliant error handling**: Errors returned as `TextContent`, never crashes
 
-## Installation
+## Quick Start (uvx)
 
-### Prerequisites
+No installation needed. Just configure Claude Desktop:
 
-- Docker
-- Docker Compose (optional)
+**`claude_desktop_config.json`**:
+```json
+{
+  "mcpServers": {
+    "dice": {
+      "command": "uvx",
+      "args": ["roleplaying-dice-mcp"]
+    }
+  }
+}
+```
 
-### Building
+That's it! Claude Desktop will automatically download and run the server.
+
+> Config file location:
+> - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+> - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+
+## Alternative: Install with pip
+
+```bash
+pip install roleplaying-dice-mcp
+```
+
+Then configure Claude Desktop:
+```json
+{
+  "mcpServers": {
+    "dice": {
+      "command": "roleplaying-dice-mcp"
+    }
+  }
+}
+```
+
+## Alternative: Docker
 
 ```bash
 docker build -t dice-mcp-server .
+docker run -i dice-mcp-server
 ```
 
-Or:
-
-```bash
-docker compose build
+```json
+{
+  "mcpServers": {
+    "dice": {
+      "command": "docker",
+      "args": ["run", "-i", "dice-mcp-server"]
+    }
+  }
+}
 ```
 
 ## Tools
@@ -107,21 +145,6 @@ Retrieve recent roll history.
 
 Clear all roll history. No parameters.
 
-## MCP Client Configuration
-
-### Claude Desktop
-
-```json
-{
-  "mcpServers": {
-    "dice": {
-      "command": "docker",
-      "args": ["run", "-i", "dice-mcp-server"]
-    }
-  }
-}
-```
-
 ## Project Structure
 
 ```
@@ -129,6 +152,13 @@ Clear all roll history. No parameters.
 ├── server.py           # MCP server — tool registration & handlers
 ├── dice_parser.py      # Dice notation parser (NdM+K)
 ├── history.py          # Roll history manager
+├── src/                # PyPI package source
+│   └── roleplaying_dice_mcp/
+│       ├── __init__.py
+│       └── server.py
+├── tests/
+│   └── test_trpg_scenario.py
+├── pyproject.toml      # Package configuration
 ├── requirements.txt    # Python dependencies
 ├── Dockerfile          # Container definition
 ├── docker-compose.yml  # Compose configuration
@@ -138,8 +168,13 @@ Clear all roll history. No parameters.
 ## Local Development
 
 ```bash
+# Direct
 pip install -r requirements.txt
 python server.py
+
+# Editable install
+pip install -e .
+roleplaying-dice-mcp
 ```
 
 ## License
