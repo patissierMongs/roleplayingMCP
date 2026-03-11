@@ -53,15 +53,22 @@ TOOLS = [
                     ),
                 },
                 "advantage": {
-                    "type": "string",
-                    "enum": ["normal", "advantage", "disadvantage"],
+                    "type": "boolean",
                     "description": (
-                        "Roll mode for the primary d20 roll. "
-                        "'advantage': roll twice, take higher. "
-                        "'disadvantage': roll twice, take lower. "
-                        "Only applies when the notation contains a single d20 group."
+                        "Enable advantage: roll d20 twice, take higher. "
+                        "Only applies to single d20 group. "
+                        "Cannot be used with disadvantage. Default: false."
                     ),
-                    "default": "normal",
+                    "default": False,
+                },
+                "disadvantage": {
+                    "type": "boolean",
+                    "description": (
+                        "Enable disadvantage: roll d20 twice, take lower. "
+                        "Only applies to single d20 group. "
+                        "Cannot be used with advantage. Default: false."
+                    ),
+                    "default": False,
                 },
                 "target": {
                     "type": "integer",
@@ -227,20 +234,28 @@ def _apply_keep(rolls: list[int], group: DiceGroup) -> tuple[list[int], list[int
 
 def _execute_roll_dice(
     notation: str,
-    advantage: str = "normal",
+    advantage: bool = False,
+    disadvantage: bool = False,
     target: int | None = None,
     target_mode: str = "at_least",
     critical: bool = False,
 ) -> types.CallToolResult:
     """Execute a dice roll and return a CallToolResult."""
+    if advantage and disadvantage:
+        return _error_result(
+            "advantage와 disadvantage를 동시에 사용할 수 없습니다."
+        )
+
     try:
         parsed = parse(notation)
     except ValueError as e:
         return _error_result(str(e))
 
+    has_adv = advantage or disadvantage
+
     # Advantage/disadvantage: only valid for single d20 group without keep
     adv_applicable = (
-        advantage != "normal"
+        has_adv
         and len(parsed.groups) == 1
         and parsed.groups[0].sides == 20
         and parsed.groups[0].count == 1
@@ -249,7 +264,7 @@ def _execute_roll_dice(
         and parsed.groups[0].keep_lowest is None
     )
 
-    if advantage != "normal" and not adv_applicable:
+    if has_adv and not adv_applicable:
         return _error_result(
             "어드밴티지/디스어드밴티지는 단일 1d20 굴림에만 적용 가능합니다. "
             f"현재 표현식: '{notation}'"
@@ -261,7 +276,7 @@ def _execute_roll_dice(
     if adv_applicable:
         roll1 = random.randint(1, 20)
         roll2 = random.randint(1, 20)
-        if advantage == "advantage":
+        if advantage:
             chosen = max(roll1, roll2)
             label = "Advantage"
         else:
@@ -373,11 +388,8 @@ def _execute_roll_dice(
                 lines.append(f"판정: 실패 ({total} < {target})")
 
     result_text = "\n".join(lines)
-    history.add(
-        "roll_dice",
-        notation + (f" ({advantage})" if advantage != "normal" else ""),
-        result_text,
-    )
+    adv_label = " (advantage)" if advantage else " (disadvantage)" if disadvantage else ""
+    history.add("roll_dice", notation + adv_label, result_text)
     return _ok_result(result_text)
 
 
@@ -482,11 +494,8 @@ async def handle_call_tool(
         notation = args.get("notation")
         if not notation:
             return _error_result("'notation' 파라미터가 필요합니다. 예: '1d20+5', '4d6kh3'")
-        advantage = args.get("advantage", "normal")
-        if advantage not in ("normal", "advantage", "disadvantage"):
-            return _error_result(
-                "'advantage'는 'normal', 'advantage', 'disadvantage' 중 하나여야 합니다."
-            )
+        advantage = bool(args.get("advantage", False))
+        disadvantage = bool(args.get("disadvantage", False))
         target = args.get("target")
         target_mode = args.get("target_mode", "at_least")
         if target_mode not in ("at_least", "at_most"):
@@ -494,7 +503,7 @@ async def handle_call_tool(
                 "'target_mode'는 'at_least' 또는 'at_most'여야 합니다."
             )
         critical = bool(args.get("critical", False))
-        return _execute_roll_dice(notation, advantage, target, target_mode, critical)
+        return _execute_roll_dice(notation, advantage, disadvantage, target, target_mode, critical)
 
     elif name == "roll_pool":
         pool = args.get("pool")
@@ -540,7 +549,7 @@ async def _run():
             write_stream,
             InitializationOptions(
                 server_name="dice-server",
-                server_version="3.0.0",
+                server_version="3.1.0",
                 capabilities=server.get_capabilities(
                     notification_options=NotificationOptions(),
                     experimental_capabilities={},

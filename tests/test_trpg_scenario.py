@@ -133,7 +133,7 @@ async def run_scenario():
 
             r = await session.call_tool("roll_dice", {
                 "notation": "1d20+4",
-                "advantage": "advantage",
+                "advantage": True,
                 "target": 15,
                 "critical": True,
             })
@@ -166,7 +166,7 @@ async def run_scenario():
 
             r = await session.call_tool("roll_dice", {
                 "notation": "1d20+4",
-                "advantage": "disadvantage",
+                "disadvantage": True,
                 "target": 18,
                 "critical": True,
             })
@@ -321,7 +321,17 @@ async def run_scenario():
             print("\n  [Test] 2d6에 advantage → isError=True")
             r = await session.call_tool("roll_dice", {
                 "notation": "2d6",
-                "advantage": "advantage",
+                "advantage": True,
+            })
+            assert r.isError == True
+            print(f"    ✓ isError=True: {result_lines(r)[:60]}")
+
+            # advantage + disadvantage simultaneously
+            print("\n  [Test] advantage + disadvantage 동시 → isError=True")
+            r = await session.call_tool("roll_dice", {
+                "notation": "1d20",
+                "advantage": True,
+                "disadvantage": True,
             })
             assert r.isError == True
             print(f"    ✓ isError=True: {result_lines(r)[:60]}")

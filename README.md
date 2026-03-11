@@ -84,7 +84,8 @@ Roll dice using standard TRPG notation.
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `notation` | string | Yes | — | Dice expression: `1d20+5`, `4d6kh3`, `2d20kl1`, `3d20-2d20` |
-| `advantage` | string | No | `"normal"` | `"normal"`, `"advantage"`, `"disadvantage"` (1d20 only) |
+| `advantage` | boolean | No | `false` | Roll d20 twice, take higher (1d20 only) |
+| `disadvantage` | boolean | No | `false` | Roll d20 twice, take lower (1d20 only) |
 | `target` | integer | No | — | DC/AC/skill value for success check |
 | `target_mode` | string | No | `"at_least"` | `"at_least"` (D&D: ≥) or `"at_most"` (CoC: ≤) |
 | `critical` | boolean | No | `false` | Enable nat 20/1 critical detection on d20 |
@@ -99,7 +100,7 @@ Roll dice using standard TRPG notation.
 // → Total: 19
 
 // Advantage with DC check + critical detection
-{ "name": "roll_dice", "arguments": { "notation": "1d20+5", "advantage": "advantage", "target": 15, "critical": true } }
+{ "name": "roll_dice", "arguments": { "notation": "1d20+5", "advantage": true, "target": 15, "critical": true } }
 // → Roll (Advantage): 1d20 → [20, 8] → 선택: 20
 // → Modifier: +5
 // → Total: 25
