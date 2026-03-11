@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "roleplaying-dice-mcp"
-version = "3.1.0"
+version = "4.0.0"
 description = "MCP server for TRPG dice rolling — standard notation, dice pools, advantage, critical detection, and more"
 readme = "README.md"
 license = "MIT"
