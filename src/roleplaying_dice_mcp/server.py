@@ -36,92 +36,60 @@ TOOLS = [
     types.Tool(
         name="roll_dice",
         description=(
-            "Roll dice using standard TRPG notation (e.g. '2d6+3', '1d20+5', '4d6kh3', '4dF'). "
-            "Supports advantage/disadvantage, bonus/penalty dice (CoC), "
-            "keep highest/lowest, critical detection, flexible target comparison, "
-            "and success degree calculation. Returns individual rolls and the total."
+            "Roll dice using standard TRPG notation. Supports modifiers, "
+            "keep-highest/lowest, Fudge dice, advantage/disadvantage, "
+            "bonus/penalty dice, target checks, degree calculations, "
+            "and critical detection."
         ),
         inputSchema={
             "type": "object",
             "properties": {
                 "notation": {
                     "type": "string",
-                    "description": (
-                        "Dice notation string. Examples: '1d20+5', '2d6+3', "
-                        "'4d6kh3' (keep highest 3), '2d20kl1' (keep lowest 1), "
-                        "'4dF+2' (fudge/FATE dice), '1d100' (percentile)."
-                    ),
+                    "description": "Dice expression (NdM+X, NdFate, kh/kl).",
                 },
                 "advantage": {
                     "type": "boolean",
-                    "description": (
-                        "Enable advantage: roll d20 twice, take higher. "
-                        "Only applies to single d20 group. Default: false."
-                    ),
+                    "description": "D&D 5e advantage (1d20 only).",
                     "default": False,
                 },
                 "disadvantage": {
                     "type": "boolean",
-                    "description": (
-                        "Enable disadvantage: roll d20 twice, take lower. "
-                        "Only applies to single d20 group. Default: false."
-                    ),
+                    "description": "D&D 5e disadvantage (1d20 only).",
                     "default": False,
                 },
                 "bonus_dice": {
                     "type": "integer",
-                    "description": (
-                        "CoC bonus dice count. Roll extra tens dice on d100, "
-                        "keep the lowest (better result). Only for 1d100. Default: 0."
-                    ),
+                    "description": "CoC bonus dice (1d100 only).",
                     "default": 0,
                     "minimum": 0,
                     "maximum": 2,
                 },
                 "penalty_dice": {
                     "type": "integer",
-                    "description": (
-                        "CoC penalty dice count. Roll extra tens dice on d100, "
-                        "keep the highest (worse result). Only for 1d100. Default: 0."
-                    ),
+                    "description": "CoC penalty dice (1d100 only).",
                     "default": 0,
                     "minimum": 0,
                     "maximum": 2,
                 },
                 "target": {
                     "type": "integer",
-                    "description": (
-                        "Target number (DC/AC/skill value) for success check."
-                    ),
+                    "description": "DC, AC, or skill value for success check.",
                 },
                 "target_mode": {
                     "type": "string",
                     "enum": ["at_least", "at_most"],
-                    "description": (
-                        "How to compare result against target. "
-                        "'at_least' (default): success if result >= target (D&D). "
-                        "'at_most': success if result <= target (CoC/BRP)."
-                    ),
                     "default": "at_least",
                 },
                 "critical": {
                     "type": "boolean",
-                    "description": (
-                        "Enable critical hit/fumble detection on d20 rolls. "
-                        "When used with degrees='pf2e', nat 20/1 shifts degree. "
-                        "Default: false."
-                    ),
+                    "description": "Detect nat 20/1 on d20 rolls.",
                     "default": False,
                 },
                 "degrees": {
                     "type": "string",
                     "enum": ["coc", "pf2e", "pbta"],
-                    "description": (
-                        "Enable success degree calculation. Replaces simple pass/fail. "
-                        "'coc': Regular/Hard/Extreme/Critical/Fumble (d100, needs target). "
-                        "'pf2e': Crit Success/Success/Fail/Crit Fail by ±10 margin (needs target). "
-                        "'pbta': Strong Hit/Weak Hit/Miss (2d6, fixed thresholds)."
-                    ),
+                    "description": "Success degree system. Requires target (except pbta).",
                 },
             },
             "required": ["notation"],
@@ -130,51 +98,40 @@ TOOLS = [
     types.Tool(
         name="roll_pool",
         description=(
-            "Roll a dice pool and count successes. Used for systems like "
-            "World of Darkness, Shadowrun, etc."
+            "Roll a dice pool and count successes. "
+            "Use for WoD, Shadowrun, or similar pool-based systems."
         ),
         inputSchema={
             "type": "object",
             "properties": {
                 "pool": {
                     "type": "integer",
-                    "description": "Number of dice to roll.",
                     "minimum": 1,
                     "maximum": 50,
                 },
                 "sides": {
                     "type": "integer",
-                    "description": "Number of sides per die. Default: 10.",
                     "default": 10,
                     "minimum": 2,
                     "maximum": 100,
                 },
                 "target": {
                     "type": "integer",
-                    "description": "Minimum value for a success. Default: 8.",
+                    "description": "Minimum value for a success.",
                     "default": 8,
                 },
                 "explode": {
                     "type": "boolean",
-                    "description": (
-                        "Exploding dice: max value triggers reroll. Default: false."
-                    ),
+                    "description": "Reroll on max value.",
                     "default": False,
                 },
                 "double_on": {
                     "type": "integer",
-                    "description": (
-                        "Rolls at or above this value count as 2 successes. "
-                        "Must be >= target."
-                    ),
+                    "description": "Threshold for double successes (must be >= target).",
                 },
                 "count_ones": {
                     "type": "boolean",
-                    "description": (
-                        "Enable botch/glitch detection. "
-                        "WoD Botch: 0 successes + any 1s. "
-                        "Shadowrun Glitch: half+ dice are 1s. Default: false."
-                    ),
+                    "description": "Enable botch/glitch detection.",
                     "default": False,
                 },
             },
@@ -183,21 +140,17 @@ TOOLS = [
     ),
     types.Tool(
         name="reroll",
-        description=(
-            "Re-roll the last dice roll with identical parameters. "
-            "Useful for Inspiration, Lucky feat, reroll abilities."
-        ),
+        description="Re-roll the last roll with identical parameters.",
         inputSchema={"type": "object", "properties": {}},
     ),
     types.Tool(
         name="get_history",
-        description="Retrieve recent dice roll history for the current session.",
+        description="Retrieve recent roll history for this session.",
         inputSchema={
             "type": "object",
             "properties": {
                 "limit": {
                     "type": "integer",
-                    "description": "Number of recent rolls to retrieve. Default: 10.",
                     "default": 10,
                     "minimum": 1,
                     "maximum": 100,
@@ -207,7 +160,7 @@ TOOLS = [
     ),
     types.Tool(
         name="clear_history",
-        description="Clear all dice roll history for the current session.",
+        description="Clear all roll history for this session.",
         inputSchema={"type": "object", "properties": {}},
     ),
 ]
@@ -298,17 +251,17 @@ def _degrees_coc(total: int, target: int) -> list[str]:
     lines: list[str] = []
 
     if total == 1:
-        lines.append(f"판정: 대성공! (01 — Critical)")
+        lines.append(f"Check: Critical! (01)")
     elif total <= extreme:
-        lines.append(f"판정: 익스트림 성공! ({total} ≤ {extreme})")
+        lines.append(f"Check: Extreme Success! ({total} ≤ {extreme})")
     elif total <= hard:
-        lines.append(f"판정: 하드 성공! ({total} ≤ {hard})")
+        lines.append(f"Check: Hard Success! ({total} ≤ {hard})")
     elif total <= target:
-        lines.append(f"판정: 레귤러 성공 ({total} ≤ {target})")
+        lines.append(f"Check: Regular Success ({total} ≤ {target})")
     elif (target <= 50 and total >= 96) or total == 100:
-        lines.append(f"판정: 펌블! ({total})")
+        lines.append(f"Check: Fumble! ({total})")
     else:
-        lines.append(f"판정: 실패 ({total} > {target})")
+        lines.append(f"Check: Failure ({total} > {target})")
 
     lines.append(f"  [Regular ≤{target} / Hard ≤{hard} / Extreme ≤{extreme}]")
     return lines
@@ -348,27 +301,27 @@ def _degrees_pf2e(
             nat_shift = " (Nat 1 ↓)"
 
     labels = {
-        "crit_success": "대성공!",
-        "success": "성공",
-        "failure": "실패",
-        "crit_failure": "대실패!",
+        "crit_success": "Critical Success!",
+        "success": "Success",
+        "failure": "Failure",
+        "crit_failure": "Critical Failure!",
     }
     margin = total - target
     sign = "+" if margin >= 0 else ""
     lines = [
-        f"판정: {labels[degree]}{nat_shift} (차이: {sign}{margin})",
-        f"  [DC {target}: 대성공 ≥{target + 10} / 성공 ≥{target} / 대실패 ≤{target - 10}]",
+        f"Check: {labels[degree]}{nat_shift} (margin: {sign}{margin})",
+        f"  [DC {target}: Crit ≥{target + 10} / Pass ≥{target} / Crit Fail ≤{target - 10}]",
     ]
     return lines
 
 
 def _degrees_pbta(total: int) -> list[str]:
     if total >= 10:
-        line = f"판정: Strong Hit! ({total} ≥ 10)"
+        line = f"Check: Strong Hit! ({total} ≥ 10)"
     elif total >= 7:
-        line = f"판정: Weak Hit ({total}: 7-9)"
+        line = f"Check: Weak Hit ({total}: 7-9)"
     else:
-        line = f"판정: Miss ({total} ≤ 6)"
+        line = f"Check: Miss ({total} ≤ 6)"
     return [line, "  [Strong ≥10 / Weak 7-9 / Miss ≤6]"]
 
 
@@ -389,19 +342,19 @@ def _execute_roll_dice(
 ) -> types.CallToolResult:
     # --- Validation ---
     if advantage and disadvantage:
-        return _error_result("advantage와 disadvantage를 동시에 사용할 수 없습니다.")
+        return _error_result("Cannot use both advantage and disadvantage.")
     if bonus_dice > 0 and penalty_dice > 0:
-        return _error_result("bonus_dice와 penalty_dice를 동시에 사용할 수 없습니다.")
+        return _error_result("Cannot use both bonus_dice and penalty_dice.")
     has_adv = advantage or disadvantage
     has_bp = bonus_dice > 0 or penalty_dice > 0
     if has_adv and has_bp:
         return _error_result(
-            "advantage/disadvantage와 bonus/penalty dice를 동시에 사용할 수 없습니다."
+            "Cannot combine advantage/disadvantage with bonus/penalty dice."
         )
     if degrees is not None and degrees not in ("coc", "pf2e", "pbta"):
-        return _error_result("degrees는 'coc', 'pf2e', 'pbta' 중 하나여야 합니다.")
+        return _error_result("degrees must be one of: 'coc', 'pf2e', 'pbta'.")
     if degrees in ("coc", "pf2e") and target is None:
-        return _error_result(f"'{degrees}' 성공 단계 판정에는 target이 필요합니다.")
+        return _error_result(f"degrees='{degrees}' requires target to be set.")
 
     try:
         parsed = parse(notation)
@@ -421,8 +374,8 @@ def _execute_roll_dice(
     )
     if has_adv and not adv_applicable:
         return _error_result(
-            "어드밴티지/디스어드밴티지는 단일 1d20 굴림에만 적용 가능합니다. "
-            f"현재 표현식: '{notation}'"
+            f"Advantage/disadvantage only applies to a single 1d20 roll. "
+            f"Got: '{notation}'"
         )
 
     # Check applicability of bonus/penalty
@@ -436,8 +389,8 @@ def _execute_roll_dice(
     )
     if has_bp and not bp_applicable:
         return _error_result(
-            "보너스/페널티 다이스는 단일 1d100 굴림에만 적용 가능합니다. "
-            f"현재 표현식: '{notation}'"
+            f"Bonus/penalty dice only applies to a single 1d100 roll. "
+            f"Got: '{notation}'"
         )
 
     lines: list[str] = []
@@ -457,7 +410,7 @@ def _execute_roll_dice(
 
         natural_value = chosen
         total = chosen + parsed.modifier
-        lines.append(f"Roll ({label}): 1d20 → [{roll1}, {roll2}] → 선택: {chosen}")
+        lines.append(f"Roll ({label}): 1d20 → [{roll1}, {roll2}] → picked: {chosen}")
         if parsed.modifier != 0:
             sign = "+" if parsed.modifier > 0 else ""
             lines.append(f"Modifier: {sign}{parsed.modifier}")
@@ -467,7 +420,7 @@ def _execute_roll_dice(
     elif bp_applicable:
         bp_total, units, possibles = _roll_percentile_with_bp(bonus_dice, penalty_dice)
         total = bp_total + parsed.modifier
-        bp_label = f"보너스 ×{bonus_dice}" if bonus_dice > 0 else f"페널티 ×{penalty_dice}"
+        bp_label = f"Bonus ×{bonus_dice}" if bonus_dice > 0 else f"Penalty ×{penalty_dice}"
         possibles_str = ", ".join(str(p) for p in possibles)
         lines.append(f"1d100 ({bp_label}): [{possibles_str}] → {bp_total}")
         if parsed.modifier != 0:
@@ -595,14 +548,14 @@ def _execute_roll_dice(
         if target is not None:
             if target_mode == "at_most":
                 if total <= target:
-                    lines.append(f"판정: 성공! ({total} ≤ {target})")
+                    lines.append(f"Check: Success! ({total} ≤ {target})")
                 else:
-                    lines.append(f"판정: 실패 ({total} > {target})")
+                    lines.append(f"Check: Failure ({total} > {target})")
             else:
                 if total >= target:
-                    lines.append(f"판정: 성공! ({total} ≥ {target})")
+                    lines.append(f"Check: Success! ({total} ≥ {target})")
                 else:
-                    lines.append(f"판정: 실패 ({total} < {target})")
+                    lines.append(f"Check: Failure ({total} < {target})")
 
     result_text = "\n".join(lines)
     adv_label = (
@@ -627,13 +580,13 @@ def _execute_roll_pool(
     count_ones: bool = False,
 ) -> types.CallToolResult:
     if pool < 1 or pool > 50:
-        return _error_result("다이스 풀 크기는 1~50 사이여야 합니다.")
+        return _error_result("Pool size must be between 1 and 50.")
     if sides < 2:
-        return _error_result("주사위 면 수는 2 이상이어야 합니다.")
+        return _error_result("Sides must be at least 2.")
     if target < 1 or target > sides:
-        return _error_result(f"성공 기준값은 1~{sides} 사이여야 합니다.")
+        return _error_result(f"Target must be between 1 and {sides}.")
     if double_on is not None and double_on < target:
-        return _error_result(f"double_on({double_on})은 target({target}) 이상이어야 합니다.")
+        return _error_result(f"double_on ({double_on}) must be >= target ({target}).")
 
     rolls_display: list[str] = []
     successes = 0
@@ -707,7 +660,7 @@ def _dispatch_roll(name: str, args: dict[str, Any]) -> types.CallToolResult:
     if name == "roll_dice":
         notation = args.get("notation")
         if not notation:
-            return _error_result("'notation' 파라미터가 필요합니다. 예: '1d20+5', '4dF'")
+            return _error_result("'notation' parameter is required.")
 
         advantage = bool(args.get("advantage", False))
         disadvantage = bool(args.get("disadvantage", False))
@@ -716,7 +669,7 @@ def _dispatch_roll(name: str, args: dict[str, Any]) -> types.CallToolResult:
         target = args.get("target")
         target_mode = args.get("target_mode", "at_least")
         if target_mode not in ("at_least", "at_most"):
-            return _error_result("'target_mode'는 'at_least' 또는 'at_most'여야 합니다.")
+            return _error_result("'target_mode' must be 'at_least' or 'at_most'.")
         critical = bool(args.get("critical", False))
         degrees = args.get("degrees")
 
@@ -730,7 +683,7 @@ def _dispatch_roll(name: str, args: dict[str, Any]) -> types.CallToolResult:
     elif name == "roll_pool":
         pool = args.get("pool")
         if pool is None:
-            return _error_result("'pool' 파라미터가 필요합니다.")
+            return _error_result("'pool' parameter is required.")
 
         _last_roll = {"tool": name, "args": dict(args)}
         return _execute_roll_pool(
@@ -746,7 +699,7 @@ def _dispatch_roll(name: str, args: dict[str, Any]) -> types.CallToolResult:
             count_ones=bool(args.get("count_ones", False)),
         )
 
-    return _error_result(f"알 수 없는 tool입니다: '{name}'")
+    return _error_result(f"Unknown tool: '{name}'")
 
 
 # ---------------------------------------------------------------------------
@@ -764,7 +717,7 @@ async def handle_call_tool(
 
     elif name == "reroll":
         if _last_roll is None:
-            return _error_result("이전 굴림이 없습니다. 먼저 roll_dice 또는 roll_pool을 사용하세요.")
+            return _error_result("No previous roll. Use roll_dice or roll_pool first.")
         result = _dispatch_roll(_last_roll["tool"], _last_roll["args"])
         # Mark reroll in history
         if not result.isError:
@@ -777,8 +730,8 @@ async def handle_call_tool(
         limit = int(args.get("limit", 10))
         records = history.get(limit)
         if not records:
-            return _ok_result("굴림 기록이 없습니다.")
-        lines = [f"=== 최근 {len(records)}개 굴림 기록 ==="]
+            return _ok_result("No roll history.")
+        lines = [f"=== Last {len(records)} roll(s) ==="]
         for i, rec in enumerate(records, 1):
             lines.append(f"[{i}] ({rec.timestamp}) {rec.tool}: {rec.input_desc}")
             lines.append(f"    → {rec.result_text.split(chr(10))[-1]}")
@@ -786,10 +739,10 @@ async def handle_call_tool(
 
     elif name == "clear_history":
         count = history.clear()
-        return _ok_result(f"굴림 기록 {count}건을 삭제했습니다.")
+        return _ok_result(f"Cleared {count} roll(s) from history.")
 
     else:
-        return _error_result(f"알 수 없는 tool입니다: '{name}'")
+        return _error_result(f"Unknown tool: '{name}'")
 
 
 # ---------------------------------------------------------------------------
