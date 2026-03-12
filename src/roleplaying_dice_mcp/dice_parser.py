@@ -44,12 +44,12 @@ def parse(notation: str) -> ParsedNotation:
     """Parse a dice notation string into structured components."""
     cleaned = notation.replace(" ", "").lower()
     if not cleaned:
-        raise ValueError("빈 주사위 표현식입니다.")
+        raise ValueError("Empty dice expression.")
 
     tokens = _TOKEN_RE.findall(cleaned)
     if not tokens:
         raise ValueError(
-            f"올바른 다이스 노테이션이 아닙니다: '{notation}'. 예: 2d6+3, 1d20+5, 4dF"
+            f"Invalid dice notation: '{notation}'. Use format like 2d6+3, 1d20+5, 4dF"
         )
 
     # Verify the entire string is consumed by tokens
@@ -70,7 +70,7 @@ def parse(notation: str) -> ParsedNotation:
 
     if _normalize(reconstructed) != _normalize(cleaned):
         raise ValueError(
-            f"올바른 다이스 노테이션이 아닙니다: '{notation}'. 예: 2d6+3, 1d20+5, 4dF"
+            f"Invalid dice notation: '{notation}'. Use format like 2d6+3, 1d20+5, 4dF"
         )
 
     groups: list[DiceGroup] = []
@@ -85,29 +85,29 @@ def parse(notation: str) -> ParsedNotation:
             s = 0 if is_fudge else int(sides_str)
 
             if n < 1:
-                raise ValueError(f"주사위 개수는 1 이상이어야 합니다: {n}")
+                raise ValueError(f"Dice count must be at least 1: {n}")
             if not is_fudge and s < 1:
-                raise ValueError(f"주사위 면 수는 1 이상이어야 합니다: {n}d{s}")
+                raise ValueError(f"Dice sides must be at least 1: {n}d{s}")
             if n > 100:
-                raise ValueError(f"주사위 개수가 너무 많습니다 (최대 100): {n}")
+                raise ValueError(f"Too many dice (max 100): {n}")
             if not is_fudge and s > 1000:
-                raise ValueError(f"주사위 면 수가 너무 큽니다 (최대 1000): {n}d{s}")
+                raise ValueError(f"Too many sides (max 1000): {n}d{s}")
 
             keep_highest = int(kh) if kh else None
             keep_lowest = int(kl) if kl else None
 
             if keep_highest is not None and keep_highest > n:
                 raise ValueError(
-                    f"keep highest({keep_highest})가 주사위 개수({n})보다 클 수 없습니다."
+                    f"keep highest ({keep_highest}) exceeds dice count ({n})."
                 )
             if keep_highest is not None and keep_highest < 1:
-                raise ValueError(f"keep highest는 1 이상이어야 합니다.")
+                raise ValueError("keep highest must be at least 1.")
             if keep_lowest is not None and keep_lowest > n:
                 raise ValueError(
-                    f"keep lowest({keep_lowest})가 주사위 개수({n})보다 클 수 없습니다."
+                    f"keep lowest ({keep_lowest}) exceeds dice count ({n})."
                 )
             if keep_lowest is not None and keep_lowest < 1:
-                raise ValueError(f"keep lowest는 1 이상이어야 합니다.")
+                raise ValueError("keep lowest must be at least 1.")
 
             groups.append(DiceGroup(
                 count=n, sides=s, negative=is_negative,
@@ -120,7 +120,7 @@ def parse(notation: str) -> ParsedNotation:
 
     if not groups:
         raise ValueError(
-            f"주사위가 포함되지 않았습니다: '{notation}'. 상수만으로는 굴릴 수 없습니다."
+            f"No dice found in '{notation}'. Constants alone are not valid."
         )
 
     return ParsedNotation(groups=groups, modifier=modifier, original=notation)

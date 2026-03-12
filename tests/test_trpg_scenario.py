@@ -138,9 +138,9 @@ async def run_scenario():
             print(f"\n{result_text(r)}")
             assert not r.isError
             text = result_text(r)
-            assert "보너스" in text
+            assert "Bonus" in text
             assert "Regular ≤65" in text
-            print("  ✓ CoC 보너스 다이스 + 성공 단계 정상 출력")
+            print("  ✓ CoC bonus dice + degree output OK")
 
             # 페널티 다이스
             narrate("불리한 상황! 페널티 다이스 1개.")
@@ -153,8 +153,8 @@ async def run_scenario():
             })
             print(f"\n{result_text(r)}")
             assert not r.isError
-            assert "페널티" in result_text(r)
-            print("  ✓ CoC 페널티 다이스 정상 출력")
+            assert "Penalty" in result_text(r)
+            print("  ✓ CoC penalty dice output OK")
 
             # CoC 성공 단계 (보너스/페널티 없이)
             narrate("SAN 체크! 현재 SAN 65")
@@ -182,8 +182,8 @@ async def run_scenario():
             assert not r.isError
             text = result_text(r)
             assert "DC 20" in text
-            assert "차이:" in text
-            print("  ✓ PF2e 성공 단계 정상 출력")
+            assert "margin:" in text
+            print("  ✓ PF2e degree output OK")
 
             # ==============================================================
             header("PbtA: 던전월드 판정 (2d6+1)")
@@ -304,7 +304,7 @@ async def run_scenario():
 
             r = await session.call_tool("clear_history", {})
             assert not r.isError
-            assert "삭제" in result_text(r)
+            assert "Cleared" in result_text(r)
             print(f"  ✓ {result_text(r)}")
 
             # ==============================================================
