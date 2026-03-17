@@ -1,4 +1,12 @@
-"""Roll history manager for the TRPG dice server."""
+"""
+Roll history — in-memory backing service.
+
+Factor IV (Backing Services): History is treated as an attached resource.
+The HistoryBackend protocol in roller.py defines the contract;
+this module provides the default in-memory implementation.
+
+Swap to Redis/SQLite/etc. by implementing the same protocol.
+"""
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -14,7 +22,7 @@ class RollRecord:
 
 
 class RollHistory:
-    """In-memory roll history with a max capacity."""
+    """In-memory roll history with a max capacity (FIFO eviction)."""
 
     def __init__(self, max_size: int = 100):
         self._records: list[RollRecord] = []

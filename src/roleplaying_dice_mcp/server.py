@@ -1,18 +1,18 @@
-#!/usr/bin/env python3
 """
-MCP Dice Server — TRPG-ready dice rolling server using Model Context Protocol.
+MCP Dice Server — slim transport layer.
 
-Tools:
-  - roll_dice    : Standard dice notation with adv/dis, bonus/penalty,
-                    keep highest/lowest, critical, target modes, degrees
-  - roll_pool    : Dice pool with success counting, exploding, botch/glitch
-  - reroll       : Re-roll the last roll with same parameters
-  - get_history  : Retrieve recent roll history
-  - clear_history: Clear roll history
+Factor VII (Port Binding): Exports service via MCP stdio.
+Factor VI (Stateless Processes): All state lives in injected DiceRoller.
+
+This module is ONLY responsible for:
+  1. Declaring MCP tool schemas
+  2. Routing tool calls to DiceRoller
+  3. Converting RollResult → CallToolResult
 """
 
 import asyncio
-import random
+import logging
+import sys
 from typing import Any
 
 from mcp.server.models import InitializationOptions
@@ -20,16 +20,22 @@ from mcp.server import NotificationOptions, Server
 import mcp.server.stdio
 import mcp.types as types
 
-from .dice_parser import parse, DiceGroup
+from .config import load_config
 from .history import RollHistory
+from .models import RollResult
+from .roller import DiceRoller
 
-server = Server("dice-server")
-history = RollHistory(max_size=100)
-_last_roll: dict[str, Any] | None = None
+# Factor XI (Logs): Treat logs as event streams → stdout
+logging.basicConfig(
+    stream=sys.stderr,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    level=logging.INFO,
+)
+logger = logging.getLogger("dice-server")
 
 
 # ---------------------------------------------------------------------------
-# Tool definitions
+# Tool schema definitions (MCP transport concern only)
 # ---------------------------------------------------------------------------
 
 TOOLS = [
@@ -166,527 +172,64 @@ TOOLS = [
 ]
 
 
-@server.list_tools()
-async def handle_list_tools() -> list[types.Tool]:
-    return TOOLS
-
-
 # ---------------------------------------------------------------------------
-# Helpers
+# Server factory — Dependency Injection entry point
 # ---------------------------------------------------------------------------
 
-def _error_result(message: str) -> types.CallToolResult:
-    return types.CallToolResult(
-        content=[types.TextContent(type="text", text=f"Error: {message}")],
-        isError=True,
-    )
+def create_server() -> tuple[Server, DiceRoller]:
+    """Wire dependencies and return configured (Server, DiceRoller).
 
-
-def _ok_result(text: str) -> types.CallToolResult:
-    return types.CallToolResult(
-        content=[types.TextContent(type="text", text=text)],
-        isError=False,
-    )
-
-
-def _roll_group(group: DiceGroup) -> list[int]:
-    if group.fudge:
-        return [random.choice([-1, 0, 1]) for _ in range(group.count)]
-    return [random.randint(1, group.sides) for _ in range(group.count)]
-
-
-def _apply_keep(rolls: list[int], group: DiceGroup) -> tuple[list[int], list[int]]:
-    if group.keep_highest is not None:
-        sorted_rolls = sorted(enumerate(rolls), key=lambda x: x[1], reverse=True)
-        kept_indices = {idx for idx, _ in sorted_rolls[:group.keep_highest]}
-        kept = [r for i, r in enumerate(rolls) if i in kept_indices]
-        dropped = [r for i, r in enumerate(rolls) if i not in kept_indices]
-        return kept, dropped
-    elif group.keep_lowest is not None:
-        sorted_rolls = sorted(enumerate(rolls), key=lambda x: x[1])
-        kept_indices = {idx for idx, _ in sorted_rolls[:group.keep_lowest]}
-        kept = [r for i, r in enumerate(rolls) if i in kept_indices]
-        dropped = [r for i, r in enumerate(rolls) if i not in kept_indices]
-        return kept, dropped
-    return rolls, []
-
-
-# ---------------------------------------------------------------------------
-# Bonus/Penalty dice (CoC percentile)
-# ---------------------------------------------------------------------------
-
-def _roll_percentile_with_bp(
-    bonus_dice: int, penalty_dice: int,
-) -> tuple[int, int, list[int]]:
-    """Roll d100 with CoC bonus/penalty dice.
-
-    Returns: (total, units_digit, list_of_all_possible_results)
+    Factor VI: Stateless process — all state in DiceRoller.
+    Factor IV: History is an injected backing service.
     """
-    units = random.randint(0, 9)
-    num_tens = 1 + bonus_dice + penalty_dice
-    tens_rolls = [random.randint(0, 9) for _ in range(num_tens)]
+    config = load_config()
+    logger.setLevel(config.log_level)
 
-    possibles = []
-    for t in tens_rolls:
-        result = t * 10 + units
-        possibles.append(100 if result == 0 else result)
+    history = RollHistory(max_size=config.history_max_size)
+    roller = DiceRoller(config=config, history=history)
+    server = Server(config.name)
 
-    if bonus_dice > 0:
-        total = min(possibles)
-    elif penalty_dice > 0:
-        total = max(possibles)
-    else:
-        total = possibles[0]
+    @server.list_tools()
+    async def handle_list_tools() -> list[types.Tool]:
+        return TOOLS
 
-    return total, units, possibles
+    @server.call_tool()
+    async def handle_call_tool(
+        name: str, arguments: dict[str, Any] | None,
+    ) -> types.CallToolResult:
+        args = arguments or {}
+        result = _dispatch(roller, name, args)
+        return _to_mcp_result(result)
 
-
-# ---------------------------------------------------------------------------
-# Degrees of success
-# ---------------------------------------------------------------------------
-
-def _degrees_coc(total: int, target: int) -> list[str]:
-    hard = target // 2
-    extreme = target // 5
-    lines: list[str] = []
-
-    if total == 1:
-        lines.append(f"Check: Critical! (01)")
-    elif total <= extreme:
-        lines.append(f"Check: Extreme Success! ({total} ≤ {extreme})")
-    elif total <= hard:
-        lines.append(f"Check: Hard Success! ({total} ≤ {hard})")
-    elif total <= target:
-        lines.append(f"Check: Regular Success ({total} ≤ {target})")
-    elif (target <= 50 and total >= 96) or total == 100:
-        lines.append(f"Check: Fumble! ({total})")
-    else:
-        lines.append(f"Check: Failure ({total} > {target})")
-
-    lines.append(f"  [Regular ≤{target} / Hard ≤{hard} / Extreme ≤{extreme}]")
-    return lines
+    return server, roller
 
 
-def _degrees_pf2e(
-    total: int, target: int, natural_value: int | None, critical: bool,
-) -> list[str]:
-    # Base degree by margin
-    if total >= target + 10:
-        degree = "crit_success"
-    elif total >= target:
-        degree = "success"
-    elif total > target - 10:
-        degree = "failure"
-    else:
-        degree = "crit_failure"
-
-    # Nat 20/1 shifts degree by one step
-    nat_shift = ""
-    if critical and natural_value is not None:
-        upgrades = {
-            "crit_failure": "failure",
-            "failure": "success",
-            "success": "crit_success",
-        }
-        downgrades = {
-            "crit_success": "success",
-            "success": "failure",
-            "failure": "crit_failure",
-        }
-        if natural_value == 20 and degree in upgrades:
-            degree = upgrades[degree]
-            nat_shift = " (Nat 20 ↑)"
-        elif natural_value == 1 and degree in downgrades:
-            degree = downgrades[degree]
-            nat_shift = " (Nat 1 ↓)"
-
-    labels = {
-        "crit_success": "Critical Success!",
-        "success": "Success",
-        "failure": "Failure",
-        "crit_failure": "Critical Failure!",
-    }
-    margin = total - target
-    sign = "+" if margin >= 0 else ""
-    lines = [
-        f"Check: {labels[degree]}{nat_shift} (margin: {sign}{margin})",
-        f"  [DC {target}: Crit ≥{target + 10} / Pass ≥{target} / Crit Fail ≤{target - 10}]",
-    ]
-    return lines
-
-
-def _degrees_pbta(total: int) -> list[str]:
-    if total >= 10:
-        line = f"Check: Strong Hit! ({total} ≥ 10)"
-    elif total >= 7:
-        line = f"Check: Weak Hit ({total}: 7-9)"
-    else:
-        line = f"Check: Miss ({total} ≤ 6)"
-    return [line, "  [Strong ≥10 / Weak 7-9 / Miss ≤6]"]
-
-
-# ---------------------------------------------------------------------------
-# roll_dice implementation
-# ---------------------------------------------------------------------------
-
-def _execute_roll_dice(
-    notation: str,
-    advantage: bool = False,
-    disadvantage: bool = False,
-    bonus_dice: int = 0,
-    penalty_dice: int = 0,
-    target: int | None = None,
-    target_mode: str = "at_least",
-    critical: bool = False,
-    degrees: str | None = None,
-) -> types.CallToolResult:
-    # --- Validation ---
-    if advantage and disadvantage:
-        return _error_result("Cannot use both advantage and disadvantage.")
-    if bonus_dice > 0 and penalty_dice > 0:
-        return _error_result("Cannot use both bonus_dice and penalty_dice.")
-    has_adv = advantage or disadvantage
-    has_bp = bonus_dice > 0 or penalty_dice > 0
-    if has_adv and has_bp:
-        return _error_result(
-            "Cannot combine advantage/disadvantage with bonus/penalty dice."
-        )
-    if degrees is not None and degrees not in ("coc", "pf2e", "pbta"):
-        return _error_result("degrees must be one of: 'coc', 'pf2e', 'pbta'.")
-    if degrees in ("coc", "pf2e") and target is None:
-        return _error_result(f"degrees='{degrees}' requires target to be set.")
-
-    try:
-        parsed = parse(notation)
-    except ValueError as e:
-        return _error_result(str(e))
-
-    # Check applicability of advantage
-    adv_applicable = (
-        has_adv
-        and len(parsed.groups) == 1
-        and parsed.groups[0].sides == 20
-        and parsed.groups[0].count == 1
-        and not parsed.groups[0].negative
-        and not parsed.groups[0].fudge
-        and parsed.groups[0].keep_highest is None
-        and parsed.groups[0].keep_lowest is None
-    )
-    if has_adv and not adv_applicable:
-        return _error_result(
-            f"Advantage/disadvantage only applies to a single 1d20 roll. "
-            f"Got: '{notation}'"
-        )
-
-    # Check applicability of bonus/penalty
-    bp_applicable = (
-        has_bp
-        and len(parsed.groups) == 1
-        and parsed.groups[0].sides == 100
-        and parsed.groups[0].count == 1
-        and not parsed.groups[0].negative
-        and not parsed.groups[0].fudge
-    )
-    if has_bp and not bp_applicable:
-        return _error_result(
-            f"Bonus/penalty dice only applies to a single 1d100 roll. "
-            f"Got: '{notation}'"
-        )
-
-    lines: list[str] = []
-    natural_value: int | None = None
-    total: int = 0
-
-    # --- Path A: Advantage/Disadvantage ---
-    if adv_applicable:
-        roll1 = random.randint(1, 20)
-        roll2 = random.randint(1, 20)
-        if advantage:
-            chosen = max(roll1, roll2)
-            label = "Advantage"
-        else:
-            chosen = min(roll1, roll2)
-            label = "Disadvantage"
-
-        natural_value = chosen
-        total = chosen + parsed.modifier
-        lines.append(f"Roll ({label}): 1d20 → [{roll1}, {roll2}] → picked: {chosen}")
-        if parsed.modifier != 0:
-            sign = "+" if parsed.modifier > 0 else ""
-            lines.append(f"Modifier: {sign}{parsed.modifier}")
-        lines.append(f"Total: {total}")
-
-    # --- Path B: Bonus/Penalty dice (CoC percentile) ---
-    elif bp_applicable:
-        bp_total, units, possibles = _roll_percentile_with_bp(bonus_dice, penalty_dice)
-        total = bp_total + parsed.modifier
-        bp_label = f"Bonus ×{bonus_dice}" if bonus_dice > 0 else f"Penalty ×{penalty_dice}"
-        possibles_str = ", ".join(str(p) for p in possibles)
-        lines.append(f"1d100 ({bp_label}): [{possibles_str}] → {bp_total}")
-        if parsed.modifier != 0:
-            sign = "+" if parsed.modifier > 0 else ""
-            lines.append(f"Modifier: {sign}{parsed.modifier}")
-            lines.append(f"Total: {total}")
-
-    # --- Path C: Normal roll ---
-    else:
-        all_results: list[tuple[DiceGroup, list[int], list[int], list[int]]] = []
-        for group in parsed.groups:
-            rolls = _roll_group(group)
-            kept, dropped = _apply_keep(rolls, group)
-            all_results.append((group, rolls, kept, dropped))
-
-        positive_sum = 0
-        negative_sum = 0
-
-        for group, rolls, kept, dropped in all_results:
-            prefix = "-" if group.negative else ""
-            has_keep = group.keep_highest is not None or group.keep_lowest is not None
-
-            # --- Fudge dice display ---
-            if group.fudge:
-                fudge_symbols = {-1: "-", 0: "0", 1: "+"}
-                if has_keep:
-                    rolls_display = []
-                    dropped_set = list(dropped)
-                    for r in rolls:
-                        sym = fudge_symbols[r]
-                        if r in dropped_set:
-                            rolls_display.append(f"~~{sym}~~")
-                            dropped_set.remove(r)
-                        else:
-                            rolls_display.append(sym)
-                    keep_label = ""
-                    if group.keep_highest:
-                        keep_label = f"kh{group.keep_highest}"
-                    elif group.keep_lowest:
-                        keep_label = f"kl{group.keep_lowest}"
-                    kept_str = ", ".join(fudge_symbols[k] for k in kept)
-                    lines.append(
-                        f"{prefix}{group.count}dFate{keep_label}: "
-                        f"[{', '.join(rolls_display)}] → kept: [{kept_str}]"
-                    )
-                else:
-                    rolls_str = ", ".join(fudge_symbols[r] for r in rolls)
-                    lines.append(f"{prefix}{group.count}dFate: [{rolls_str}]")
-
-            # --- Normal dice display ---
-            elif has_keep:
-                rolls_display = []
-                kept_set = list(kept)
-                dropped_set = list(dropped)
-                for r in rolls:
-                    if r in dropped_set:
-                        rolls_display.append(f"~~{r}~~")
-                        dropped_set.remove(r)
-                    else:
-                        rolls_display.append(str(r))
-                        if r in kept_set:
-                            kept_set.remove(r)
-                keep_label = ""
-                if group.keep_highest:
-                    keep_label = f"kh{group.keep_highest}"
-                elif group.keep_lowest:
-                    keep_label = f"kl{group.keep_lowest}"
-                rolls_str = ", ".join(rolls_display)
-                lines.append(
-                    f"{prefix}{group.count}d{group.sides}{keep_label}: "
-                    f"[{rolls_str}] → kept: [{', '.join(str(k) for k in kept)}]"
-                )
-            else:
-                rolls_str = ", ".join(str(r) for r in rolls)
-                lines.append(f"{prefix}{group.count}d{group.sides}: [{rolls_str}]")
-
-            if group.negative:
-                negative_sum += sum(kept)
-            else:
-                positive_sum += sum(kept)
-
-            # Track natural value for critical/pf2e (single d20 group)
-            if (
-                not group.negative
-                and group.sides == 20
-                and len(parsed.groups) == 1
-            ):
-                if has_keep and len(kept) == 1:
-                    natural_value = kept[0]
-                elif not has_keep and group.count == 1:
-                    natural_value = rolls[0]
-
-        dice_total = positive_sum - negative_sum
-        total = dice_total + parsed.modifier
-
-        if negative_sum > 0:
-            total_parts = [f"{positive_sum} - {negative_sum}"]
-            if parsed.modifier != 0:
-                sign = "+" if parsed.modifier > 0 else ""
-                total_parts.append(f"{sign}{parsed.modifier}")
-            lines.append(f"Total: {' '.join(total_parts)} = {total}")
-        else:
-            if parsed.modifier != 0:
-                sign = "+" if parsed.modifier > 0 else ""
-                lines.append(f"Modifier: {sign}{parsed.modifier}")
-            lines.append(f"Total: {total}")
-
-    # --- Degrees mode: replaces simple target check + critical ---
-    if degrees:
-        if degrees == "coc":
-            lines.extend(_degrees_coc(total, target))
-        elif degrees == "pf2e":
-            lines.extend(_degrees_pf2e(total, target, natural_value, critical))
-        elif degrees == "pbta":
-            lines.extend(_degrees_pbta(total))
-    else:
-        # Standard critical detection
-        if critical and natural_value is not None:
-            if natural_value == 20:
-                lines.append("💥 CRITICAL HIT! (Natural 20)")
-            elif natural_value == 1:
-                lines.append("💀 CRITICAL FUMBLE! (Natural 1)")
-
-        # Standard target check
-        if target is not None:
-            if target_mode == "at_most":
-                if total <= target:
-                    lines.append(f"Check: Success! ({total} ≤ {target})")
-                else:
-                    lines.append(f"Check: Failure ({total} > {target})")
-            else:
-                if total >= target:
-                    lines.append(f"Check: Success! ({total} ≥ {target})")
-                else:
-                    lines.append(f"Check: Failure ({total} < {target})")
-
-    result_text = "\n".join(lines)
-    adv_label = (
-        " (advantage)" if advantage
-        else " (disadvantage)" if disadvantage
-        else ""
-    )
-    history.add("roll_dice", notation + adv_label, result_text)
-    return _ok_result(result_text)
-
-
-# ---------------------------------------------------------------------------
-# roll_pool implementation
-# ---------------------------------------------------------------------------
-
-def _execute_roll_pool(
-    pool: int,
-    sides: int = 10,
-    target: int = 8,
-    explode: bool = False,
-    double_on: int | None = None,
-    count_ones: bool = False,
-) -> types.CallToolResult:
-    if pool < 1 or pool > 50:
-        return _error_result("Pool size must be between 1 and 50.")
-    if sides < 2:
-        return _error_result("Sides must be at least 2.")
-    if target < 1 or target > sides:
-        return _error_result(f"Target must be between 1 and {sides}.")
-    if double_on is not None and double_on < target:
-        return _error_result(f"double_on ({double_on}) must be >= target ({target}).")
-
-    rolls_display: list[str] = []
-    successes = 0
-    ones_count = 0
-    total_dice_rolled = 0
-
-    for _ in range(pool):
-        roll = random.randint(1, sides)
-        chain = [roll]
-
-        while explode and chain[-1] == sides:
-            chain.append(random.randint(1, sides))
-
-        die_successes = 0
-        for val in chain:
-            if val >= target:
-                if double_on is not None and val >= double_on:
-                    die_successes += 2
-                else:
-                    die_successes += 1
-            if val == 1:
-                ones_count += 1
-
-        total_dice_rolled += len(chain)
-        successes += die_successes
-
-        if len(chain) > 1:
-            chain_str = "→".join(str(v) for v in chain)
-            rolls_display.append(f"({chain_str})")
-        else:
-            rolls_display.append(str(roll))
-
-    lines: list[str] = []
-    hdr = f"Dice Pool: {pool}d{sides} (target ≥ {target}"
-    if explode:
-        hdr += ", exploding"
-    if double_on is not None:
-        hdr += f", double on ≥ {double_on}"
-    if count_ones:
-        hdr += ", botch/glitch detection ON"
-    hdr += ")"
-    lines.append(hdr)
-    lines.append(f"Rolls: [{', '.join(rolls_display)}]")
-    lines.append(f"Successes: {successes}")
-
-    if count_ones:
-        lines.append(f"1s rolled: {ones_count}")
-        if successes == 0 and ones_count > 0:
-            lines.append("🔥 BOTCH! (0 successes with 1s — WoD rule)")
-        if ones_count >= (total_dice_rolled + 1) // 2:
-            if successes == 0:
-                lines.append(
-                    "💀 CRITICAL GLITCH! (half+ dice are 1s, 0 successes — Shadowrun rule)"
-                )
-            else:
-                lines.append("⚠️ GLITCH! (half+ dice are 1s — Shadowrun rule)")
-
-    result_text = "\n".join(lines)
-    desc = f"{pool}d{sides} pool (target≥{target})"
-    history.add("roll_pool", desc, result_text)
-    return _ok_result(result_text)
-
-
-# ---------------------------------------------------------------------------
-# Roll dispatcher (supports reroll via stored params)
-# ---------------------------------------------------------------------------
-
-def _dispatch_roll(name: str, args: dict[str, Any]) -> types.CallToolResult:
-    global _last_roll
-
+def _dispatch(roller: DiceRoller, name: str, args: dict[str, Any]) -> RollResult:
+    """Route MCP tool call to the appropriate DiceRoller method."""
     if name == "roll_dice":
         notation = args.get("notation")
         if not notation:
-            return _error_result("'notation' parameter is required.")
-
-        advantage = bool(args.get("advantage", False))
-        disadvantage = bool(args.get("disadvantage", False))
-        bonus_dice = int(args.get("bonus_dice", 0))
-        penalty_dice = int(args.get("penalty_dice", 0))
-        target = args.get("target")
+            return RollResult.error("'notation' parameter is required.")
         target_mode = args.get("target_mode", "at_least")
         if target_mode not in ("at_least", "at_most"):
-            return _error_result("'target_mode' must be 'at_least' or 'at_most'.")
-        critical = bool(args.get("critical", False))
-        degrees = args.get("degrees")
-
-        _last_roll = {"tool": name, "args": dict(args)}
-        return _execute_roll_dice(
-            notation, advantage, disadvantage,
-            bonus_dice, penalty_dice,
-            target, target_mode, critical, degrees,
+            return RollResult.error("'target_mode' must be 'at_least' or 'at_most'.")
+        return roller.roll_dice(
+            notation=notation,
+            advantage=bool(args.get("advantage", False)),
+            disadvantage=bool(args.get("disadvantage", False)),
+            bonus_dice=int(args.get("bonus_dice", 0)),
+            penalty_dice=int(args.get("penalty_dice", 0)),
+            target=args.get("target"),
+            target_mode=target_mode,
+            critical=bool(args.get("critical", False)),
+            degrees=args.get("degrees"),
         )
 
     elif name == "roll_pool":
         pool = args.get("pool")
         if pool is None:
-            return _error_result("'pool' parameter is required.")
-
-        _last_roll = {"tool": name, "args": dict(args)}
-        return _execute_roll_pool(
+            return RollResult.error("'pool' parameter is required.")
+        return roller.roll_pool(
             pool=int(pool),
             sides=int(args.get("sides", 10)),
             target=int(args.get("target", 8)),
@@ -699,64 +242,42 @@ def _dispatch_roll(name: str, args: dict[str, Any]) -> types.CallToolResult:
             count_ones=bool(args.get("count_ones", False)),
         )
 
-    return _error_result(f"Unknown tool: '{name}'")
-
-
-# ---------------------------------------------------------------------------
-# Tool handler
-# ---------------------------------------------------------------------------
-
-@server.call_tool()
-async def handle_call_tool(
-    name: str, arguments: dict[str, Any] | None,
-) -> types.CallToolResult:
-    args = arguments or {}
-
-    if name in ("roll_dice", "roll_pool"):
-        return _dispatch_roll(name, args)
-
     elif name == "reroll":
-        if _last_roll is None:
-            return _error_result("No previous roll. Use roll_dice or roll_pool first.")
-        result = _dispatch_roll(_last_roll["tool"], _last_roll["args"])
-        # Mark reroll in history
-        if not result.isError:
-            records = history.get(1)
-            if records:
-                records[0].input_desc += " (reroll)"
-        return result
+        return roller.reroll()
 
     elif name == "get_history":
-        limit = int(args.get("limit", 10))
-        records = history.get(limit)
-        if not records:
-            return _ok_result("No roll history.")
-        lines = [f"=== Last {len(records)} roll(s) ==="]
-        for i, rec in enumerate(records, 1):
-            lines.append(f"[{i}] ({rec.timestamp}) {rec.tool}: {rec.input_desc}")
-            lines.append(f"    → {rec.result_text.split(chr(10))[-1]}")
-        return _ok_result("\n".join(lines))
+        return roller.get_history(limit=int(args.get("limit", 10)))
 
     elif name == "clear_history":
-        count = history.clear()
-        return _ok_result(f"Cleared {count} roll(s) from history.")
+        return roller.clear_history()
 
     else:
-        return _error_result(f"Unknown tool: '{name}'")
+        return RollResult.error(f"Unknown tool: '{name}'")
+
+
+def _to_mcp_result(result: RollResult) -> types.CallToolResult:
+    """Convert domain RollResult to MCP CallToolResult."""
+    return types.CallToolResult(
+        content=[types.TextContent(type="text", text=result.text)],
+        isError=result.is_error,
+    )
 
 
 # ---------------------------------------------------------------------------
-# Entry point
+# Entry point — Factor IX (Disposability): fast startup
 # ---------------------------------------------------------------------------
 
 async def _run():
+    server, _ = create_server()
+    config = load_config()
+    logger.info("Starting %s v%s", config.name, config.version)
     async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
         await server.run(
             read_stream,
             write_stream,
             InitializationOptions(
-                server_name="dice-server",
-                server_version="4.0.0",
+                server_name=config.name,
+                server_version=config.version,
                 capabilities=server.get_capabilities(
                     notification_options=NotificationOptions(),
                     experimental_capabilities={},
@@ -766,5 +287,5 @@ async def _run():
 
 
 def main():
-    """Entry point for the CLI command"""
+    """Entry point for the CLI command."""
     asyncio.run(_run())
