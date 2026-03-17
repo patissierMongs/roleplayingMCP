@@ -20,7 +20,7 @@ from mcp.server import NotificationOptions, Server
 import mcp.server.stdio
 import mcp.types as types
 
-from .config import load_config
+from .config import load_config, ServerConfig
 from .history import RollHistory
 from .models import RollResult
 from .roller import DiceRoller

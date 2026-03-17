@@ -8,17 +8,9 @@ this module provides the default in-memory implementation.
 Swap to Redis/SQLite/etc. by implementing the same protocol.
 """
 
-from dataclasses import dataclass
 from datetime import datetime, timezone
 
-
-@dataclass
-class RollRecord:
-    """A single roll record."""
-    timestamp: str
-    tool: str
-    input_desc: str
-    result_text: str
+from .models import RollRecord
 
 
 class RollHistory:

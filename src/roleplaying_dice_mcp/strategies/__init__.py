@@ -1,27 +1,19 @@
 """
-Strategy Pattern implementations for TRPG dice mechanics.
+Strategy Pattern — degree-of-success calculations only.
 
-Each strategy encapsulates a family of interchangeable algorithms:
-  - DegreeStrategy: success-degree calculations (CoC, PF2e, PbtA)
-  - RollStrategy: dice-roll execution paths (standard, advantage, bonus/penalty)
-  - PoolStrategy: dice-pool counting (WoD, Shadowrun)
+DegreeStrategy is the one place Strategy genuinely fits:
+multiple interchangeable algorithms answering the same question
+("given a total, what's the degree of success?"), selected at
+runtime via registry lookup.
 """
 
-from .base import DegreeStrategy, RollStrategy, PoolStrategy
+from .base import DegreeStrategy
 from .degrees import CoCDegreeStrategy, PF2eDegreeStrategy, PbtADegreeStrategy, DEGREE_REGISTRY
-from .rolls import StandardRollStrategy, AdvantageRollStrategy, BonusPenaltyRollStrategy
-from .pools import StandardPoolStrategy
 
 __all__ = [
     "DegreeStrategy",
-    "RollStrategy",
-    "PoolStrategy",
     "CoCDegreeStrategy",
     "PF2eDegreeStrategy",
     "PbtADegreeStrategy",
     "DEGREE_REGISTRY",
-    "StandardRollStrategy",
-    "AdvantageRollStrategy",
-    "BonusPenaltyRollStrategy",
-    "StandardPoolStrategy",
 ]

@@ -6,6 +6,16 @@ enabling testability and reuse across different interfaces.
 """
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
+
+
+@dataclass
+class RollRecord:
+    """A single roll record — shared between history backends."""
+    timestamp: str
+    tool: str
+    input_desc: str
+    result_text: str
 
 
 @dataclass
@@ -14,6 +24,8 @@ class RollResult:
 
     lines: list[str] = field(default_factory=list)
     is_error: bool = False
+    total: int = 0
+    natural_value: int | None = None
 
     @property
     def text(self) -> str:
@@ -24,5 +36,5 @@ class RollResult:
         return RollResult(lines=[f"Error: {message}"], is_error=True)
 
     @staticmethod
-    def ok(lines: list[str]) -> "RollResult":
-        return RollResult(lines=lines, is_error=False)
+    def ok(lines: list[str], total: int = 0, natural_value: int | None = None) -> "RollResult":
+        return RollResult(lines=lines, is_error=False, total=total, natural_value=natural_value)

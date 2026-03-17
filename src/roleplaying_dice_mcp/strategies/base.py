@@ -1,17 +1,17 @@
 """
-Abstract Strategy interfaces.
+Abstract Strategy interface for degree-of-success calculations.
 
 Strategy Pattern: Define a family of algorithms, encapsulate each one,
-and make them interchangeable.
+and make them interchangeable. Only applied where it genuinely fits —
+degree systems ARE interchangeable (CoC, PF2e, PbtA all answer the
+same question: "given a total, what's the degree of success?").
 """
 
 from abc import ABC, abstractmethod
-from ..dice_parser import ParsedNotation
-from ..models import RollResult
 
 
 class DegreeStrategy(ABC):
-    """Strategy for calculating success degrees (CoC, PF2e, PbtA)."""
+    """Strategy for calculating success degrees."""
 
     @property
     @abstractmethod
@@ -32,27 +32,3 @@ class DegreeStrategy(ABC):
         critical: bool = False,
     ) -> list[str]:
         """Return degree-of-success output lines."""
-
-
-class RollStrategy(ABC):
-    """Strategy for executing a dice roll (standard, advantage, bonus/penalty)."""
-
-    @abstractmethod
-    def execute(self, parsed: ParsedNotation, **kwargs) -> RollResult:
-        """Execute the roll and return a RollResult."""
-
-
-class PoolStrategy(ABC):
-    """Strategy for executing a dice pool roll."""
-
-    @abstractmethod
-    def execute(
-        self,
-        pool: int,
-        sides: int,
-        target: int,
-        explode: bool,
-        double_on: int | None,
-        count_ones: bool,
-    ) -> RollResult:
-        """Execute the pool roll and return a RollResult."""
