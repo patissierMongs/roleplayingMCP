@@ -1,19 +1,11 @@
 FROM python:3.11-slim
 
-# Set working directory
 WORKDIR /app
 
-# Copy requirements first for better caching
-COPY requirements.txt .
-
-# Install dependencies
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy server code
-COPY server.py dice_parser.py history.py ./
-
-# Make server executable
-RUN chmod +x server.py
+# Install the package (src layout)
+COPY pyproject.toml README.md ./
+COPY src ./src
+RUN pip install --no-cache-dir .
 
 # Run the MCP server
-ENTRYPOINT ["python", "server.py"]
+ENTRYPOINT ["roleplaying-dice-mcp"]
