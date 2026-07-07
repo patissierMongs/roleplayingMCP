@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "roleplaying-dice-mcp"
-version = "4.0.0"
-description = "MCP server for TRPG dice rolling — standard notation, dice pools, advantage, critical detection, and more"
+version = "5.0.0"
+description = "MCP server that gives AI agents fair dice — standard notation, dice pools, and a verifiable roll history; game-system rules stay with the agent"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
